@@ -1,0 +1,61 @@
+name: Tugtugin APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: APK variant to build
+        type: choice
+        options: [debug, release]
+        default: debug
+
+jobs:
+  apk:
+    name: Tugtugin APK (${{ inputs.variant }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Prepare CI Gradle
+        uses: ./.github/actions/prepare-ci-gradle
+        with:
+          cache-scope: tugtugin-apk-${{ inputs.variant }}
+          persist-configuration-cache: 'false'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          packages: platform-tools
+
+      - name: Build APK
+        shell: bash
+        env:
+          BUILD_VARIANT: ${{ inputs.variant }}
+        run: |
+          set -euo pipefail
+          build_type="${BUILD_VARIANT^}"
+          ./gradlew ":androidApp:assemble$build_type" --no-daemon --max-workers="$(nproc)" \
+            "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+UseParallelGC -Dfile.encoding=UTF-8"
+
+      - name: Collect APK
+        shell: bash
+        env:
+          BUILD_VARIANT: ${{ inputs.variant }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "androidApp/build/outputs/apk/$BUILD_VARIANT"/*.apk dist/
+          ls -la dist
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: tugtugin-apk-${{ inputs.variant }}
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 14
